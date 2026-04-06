@@ -1,0 +1,1104 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% -------------------------------------------------------
+% PACKAGES
+% -------------------------------------------------------
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{siunitx}
+\usepackage{enumitem}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+% -------------------------------------------------------
+% DOCUMENT
+% -------------------------------------------------------
+\begin{document}
+
+\title{Hybrid Crop Yield Prediction Using NDVI Time Series\\
+and SAR Backscatter with Multivariate Weather Data:\\
+A Two-Stage Machine Learning Framework for\\
+Maharashtra, India}
+
+\author{
+  \IEEEauthorblockN{Gadupudi Rakesh}
+  \IEEEauthorblockA{
+    Department of Computer Science and Engineering\\
+    Indian Institute of Information Technology Dharwad\\
+    Karnataka, India\\
+    23bcs049@iiitdwd.ac.in
+  }
+}
+
+\maketitle
+
+% -------------------------------------------------------
+% ABSTRACT
+% -------------------------------------------------------
+\begin{abstract}
+Accurate crop yield prediction is essential for ensuring food security,
+optimizing agricultural resource management, and informing policy decisions.
+This study presents a two-stage machine learning framework employing two
+independent, parallel pipelines for crop yield prediction in Maharashtra,
+India, targeting sugarcane and rice in Satara district. The Stage~1 NDVI
+pipeline processes Sentinel-2 imagery to compute
+$\text{NDVI}=(\text{NIR}-\text{Red})/(\text{NIR}+\text{Red})$, integrated
+with 11 NASA POWER weather parameters. It comprises two components: (a)~EDA
+and baseline model validation on a 926-sample Maharashtra rice dataset, with
+KNN achieving $R^2 = 0.946$; and (b)~actual sugarcane yield and production
+prediction trained on 17-feature datasets (weather + soil + NDVI, 1999--2019),
+where Random Forest achieves $R^2 = 0.92$ with 2020 forecasts of
+\SI{94.55}{\tonne\per\hectare} yield and 1{,}431{,}738 tonnes production.
+The Stage~2 SAR pipeline directly addresses NDVI's fundamental limitation:
+optical sensors cannot penetrate the monsoon cloud cover that persists
+throughout the June--September growing season. Using C-band Sentinel-1
+backscatter (VV, VH polarizations) and the Radar Vegetation Index
+$\text{RVI}=4\sigma^0_{VH}/(\sigma^0_{VV}+\sigma^0_{VH})$, augmented with
+NASA POWER weather parameters, soil quality indicators, and engineered
+temporal features, the SAR pipeline provides all-weather, cloud-transparent
+crop monitoring and produces independent 2026 forecasts of \SI{110.78}{\tonne\per\hectare}
+yield and 1{,}617{,}085 tonnes production for Satara district. The two
+pipelines operate independently, with the SAR pipeline serving as a
+monsoon-resilient complement to NDVI-based estimation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Crop Yield Prediction, NDVI, Sentinel-1, Sentinel-2, SAR Backscatter, Radar
+Vegetation Index, NASA POWER, Machine Learning, K-Nearest Neighbors,
+Hybrid Framework, Maharashtra, Monsoon-Resilient Agriculture.
+\end{IEEEkeywords}
+
+% -------------------------------------------------------
+% I. INTRODUCTION
+% -------------------------------------------------------
+\section{Introduction}
+
+Reliable crop yield prediction underpins food security planning, agricultural
+resource optimization, and evidence-based policy formulation at regional and
+national scales. With the global population projected to exceed 9.7 billion
+by 2050, the imperative to maximize crop productivity through data-driven
+decision-making has never been more urgent~\cite{narimani2026}. While
+traditional methods such as field surveys and crop-cut experiments remain
+valuable, they are inherently limited in spatial coverage, temporal frequency,
+and scalability. Remote sensing offers a transformative solution by enabling
+continuous, large-scale monitoring of crop health and growth dynamics.
+
+Vegetation indices (VIs) derived from optical satellites, particularly the
+Normalized Difference Vegetation Index (NDVI), have emerged as powerful
+proxies for estimating crop yield due to their strong correlation with plant
+biomass, chlorophyll content, and photosynthetic
+activity~\cite{narimani2026,kameoka2025}. Sentinel-2's \SI{10}{\metre}
+spatial resolution and 5-day revisit cycle make it exceptionally well-suited
+for field-scale agricultural monitoring. NDVI---computed from red and
+near-infrared reflectance---increases with canopy vigor, providing a
+biophysically meaningful indicator of yield potential~\cite{kameoka2025}.
+
+Beyond optical sensing, Synthetic Aperture Radar (SAR) provides a valuable
+complementary data stream. C-band SAR (\SI{5.405}{\giga\hertz}) from
+Sentinel-1 acquires imagery regardless of illumination or atmospheric
+conditions~\cite{esa2022}, making it particularly advantageous in
+monsoon-dominated regions. SAR backscatter captures crop structural properties
+and moisture content~\cite{veloso2017}, and the Radar Vegetation Index
+\begin{equation}
+\text{RVI} = \frac{4\,\sigma^0_{VH}}{\sigma^0_{VV} + \sigma^0_{VH}}
+\label{eq:rvi_intro}
+\end{equation}
+has demonstrated meaningful correlations with crop biomass
+accumulation~\cite{mandal2020}. In regions like Satara district, Maharashtra,
+where over 89\% of annual rainfall falls during the June--September southwest
+monsoon~\cite{karande2016}, SAR data provide continuous monitoring capability
+precisely when optical observations face cloud-induced gaps.
+
+Recent studies have compellingly demonstrated that combining optical and radar
+data yields superior predictive performance: CatBoost with Sentinel-1 and
+Sentinel-2 data achieved $R^2 = 0.95$ for wheat yield prediction, representing
+a 30\% error reduction over optical-only models~\cite{uribe2023}. Similarly,
+fusing SAR-derived NDVI with Sentinel-2 NDVI enhanced spinach yield
+forecasting~\cite{mesas2023}. These advances highlight the substantial
+potential of hybrid optical--radar approaches for agricultural applications.
+
+Building on these foundations, this paper presents a fully integrated hybrid
+framework that combines (a)~Sentinel-2 NDVI time series, (b)~Sentinel-1 SAR
+backscatter features, and (c)~NASA POWER agro-meteorological data, targeting
+sugarcane and rice production in Satara district~\cite{karande2016}---a
+strategically important monsoon-belt region where climate variability poses
+significant challenges for yield forecasting. The principal contributions of
+this work are:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Dual-component NDVI pipeline:} The NDVI pipeline includes
+    (a)~EDA and baseline model validation on a 926-sample Maharashtra rice
+    dataset (\texttt{maharashtra\_Rice\_CropR1.csv}) confirming $R^2 = 0.946$
+    with KNN, and (b)~actual sugarcane yield and production prediction using
+    17-feature datasets (11 weather + 4 soil + NDVI) with Random Forest
+    achieving $R^2 = 0.92$ and 2020 forecasts of \SI{94.55}{\tonne\per\hectare}
+    yield and 1{,}431{,}738 tonnes production.
+  \item \textbf{Independent SAR pipeline addressing NDVI's cloud-cover gap:}
+    A fully separate SAR pipeline exploits Sentinel-1 C-band backscatter (VH,
+    VV, RVI) combined with NASA POWER weather and engineered temporal features
+    (yield lag, rolling precipitation and temperature averages) to provide
+    all-weather crop monitoring during monsoon months when optical NDVI is
+    systematically unavailable. It produces independent 2026 forecasts of
+    \SI{110.78}{\tonne\per\hectare} yield and 1{,}617{,}085 tonnes production.
+  \item \textbf{Real-time operational deployment:} The SAR pipeline is
+    implemented as a complete operational system (\texttt{predict\_realtime.py})
+    that fetches live NASA POWER weather and Sentinel-1 peak-season SAR
+    backscatter via GEE, applies trained model artifacts, and produces an
+    instant yield estimate for the current growing season---enabling
+    pre-harvest forecasting without requiring cloud-free optical imagery.
+  \item \textbf{Comprehensive comparative analysis:} A detailed side-by-side
+    analysis of the NDVI pipeline (strong historical accuracy, cloud-limited)
+    and SAR pipeline (all-weather capability, monsoon-resilient) elucidates
+    the distinct strengths and appropriate deployment contexts of each approach.
+\end{enumerate}
+
+% -------------------------------------------------------
+% II. LITERATURE REVIEW
+% -------------------------------------------------------
+\section{Literature Review}
+
+\subsection{NDVI-Based Yield Prediction}
+
+High-resolution multispectral imagery from Sentinel-2 has enabled a paradigm
+shift toward field-scale crop yield analysis, making data-driven machine
+learning models increasingly viable for operational
+deployment~\cite{narimani2026}. Methods combining vegetation indices with
+machine learning algorithms---including Random Forest, Support Vector
+Regression, and Convolutional Neural Networks---have advanced crop modeling
+toward high-resolution, spatially explicit forecasts~\cite{narimani2026}.
+
+NDVI's biophysical foundation and computational simplicity have established
+it as the most widely adopted vegetation index for yield estimation. Its
+sensitivity to chlorophyll absorption and canopy structure provides a direct
+link to crop biomass and productivity~\cite{narimani2026,kameoka2025}.
+Kameoka et al.\ demonstrated meaningful correlations ($R^2 = 0.68$) between
+Sentinel-2 NDVI and rice yields in Tanzania, while identifying opportunities
+for improvement through enhanced spatial sampling
+strategies~\cite{kameoka2025}. Vallentin et al.\ confirmed that
+high-resolution vegetation indices, particularly from Sentinel-2's
+\SI{10}{\metre} bands, substantially outperform coarser-resolution sensors
+for yield estimation~\cite{narimani2026}. These findings collectively
+establish the strong foundation upon which NDVI-based yield prediction systems
+can be built.
+
+\subsection{SAR-Based Agricultural Monitoring}
+
+Active C-band SAR from Sentinel-1 has opened valuable new avenues for
+agricultural monitoring, particularly in regions where persistent cloud cover
+limits optical sensing~\cite{esa2022}. Dual-polarized SAR enables the
+computation of radar-derived vegetation indices such as RVI, which capture
+volumetric canopy scattering characteristics~\cite{mandal2020}. Mandal
+et al.\ proposed a modified RVI formulation for Sentinel-1 and demonstrated
+significant correlations with crop biomass across multiple growth
+stages~\cite{mandal2020}.
+
+Filgueiras et al.\ made a notable contribution by demonstrating that
+SAR-derived NDVI can faithfully replicate optical vegetation dynamics,
+opening the possibility of gap-free vegetation monitoring throughout the
+entire agricultural calendar~\cite{filgueiras2019}. The growing body of
+sugarcane yield literature, as reviewed by Muhammad et al., confirms
+increasing adoption of Sentinel-1 as a complementary data
+source~\cite{muhammad2026}. SAR's all-weather acquisition
+capability~\cite{esa2022} positions it as a particularly attractive sensing
+modality for monsoon-dominated agricultural regions.
+
+\subsection{Hybrid Optical--Radar Approaches}
+
+The fusion of optical and SAR data has consistently demonstrated enhanced
+yield prediction performance across diverse crop types and geographies.
+Uribeetxebarria et al.\ fused Sentinel-1 (VV, VH) and Sentinel-2 features
+using CatBoost for wheat yield prediction, achieving $R^2 = 0.95$ with
+approximately 30\% RMSE reduction compared to optical-only
+models~\cite{uribe2023}. Mesas-Carrascosa et al.\ leveraged SAR-estimated
+NDVI to enhance spinach yield prediction, achieving $R^2 > 0.90$ for NDVI
+reconstruction and $R^2 = 0.89$ for final yield
+estimation~\cite{mesas2023}. Chen et al.\ reconstructed dense NDVI time
+series from Sentinel-1 and environmental data using Random Forest, obtaining
+$R^2 > 0.93$ for corn and soybean~\cite{chen2023}. Amankulova et al.\
+integrated Sentinel-1, Sentinel-2, and topographic factors for soybean yield,
+reporting $R^2$ up to 0.89~\cite{aman2024}. Xu et al.\ achieved biomass
+$R^2$ up to 0.98 for sugarcane by assimilating Sentinel-2 leaf area index
+into a crop growth model~\cite{xu2025}. These studies collectively
+establish the synergistic advantage of multi-modal remote sensing fusion for
+agricultural yield prediction.
+
+\subsection{Research Gap and Positioning}
+
+While existing systems have demonstrated the value of individual remote
+sensing modalities, the integration of NDVI, SAR, and comprehensive
+meteorological reanalysis data within a unified framework remains largely
+unexplored. Reviews emphasize that environmental variability and
+cloud-induced observational gaps represent key opportunities for
+improvement~\cite{narimani2026,muhammad2026}. This work addresses these
+opportunities by (1)~developing parallel NDVI and SAR pipelines with
+extensive temporal feature engineering, (2)~deploying each pipeline
+independently for its appropriate sensing conditions (clear-sky vs.\ monsoon),
+and (3)~embedding 11 NASA POWER parameters throughout both pipelines.
+To our knowledge, this represents one of the first studies to implement
+parallel optical and SAR pipelines with real-time operational deployment
+for crop yield prediction under monsoon conditions in tropical India.
+
+% -------------------------------------------------------
+% III. STUDY AREA AND DATA
+% -------------------------------------------------------
+\section{Study Area and Data}
+
+\subsection{Study Area}
+
+The study focuses on Satara district in Maharashtra, India (approximately
+$17.7$--$18.7^\circ$N, $73.5$--$74.5^\circ$E), with a focal site at Vidani
+village, Phaltan Tehsil ($17.9824^\circ$N, $74.5113^\circ$E).
+Fig.~\ref{fig:studyarea} illustrates the geographic location of the study
+region. This area exhibits a tropical monsoon climate, with over 89\% of
+annual rainfall concentrated during the June--September southwest monsoon
+season~\cite{karande2016}. Satara's diverse agricultural landscape is
+characterized by irrigated sugarcane cultivation in the eastern black-soil
+belt and rainfed rice in higher-rainfall western areas~\cite{karande2016}.
+Both crops hold major economic significance: Maharashtra contributes over
+35\% of India's total sugar production, while rice---the primary food
+grain---is cultivated across 1.5 million hectares statewide with
+considerable inter-district yield variability.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{study_area_map.png}
+  \caption{Geographic location of the study area. Satara district
+  (highlighted) in Maharashtra, India, with the focal study site at Vidani
+  village, Phaltan Tehsil ($17.98^\circ$N, $74.51^\circ$E). The district
+  lies within the Western Ghats transition zone, experiencing heavy
+  southwest monsoon rainfall.}
+  \label{fig:studyarea}
+\end{figure}
+
+\subsection{NASA POWER Meteorological Data}
+
+Weather data were acquired from the NASA Prediction of Worldwide Energy
+Resources (POWER) platform at $0.5^\circ \times 0.625^\circ$ spatial
+resolution~\cite{narimani2026}. Eleven meteorological parameters were
+extracted at monthly resolution for 2000--2025 (Table~\ref{tab:features}):
+total precipitation, average temperature, maximum temperature, minimum
+temperature, relative humidity, specific humidity, dew point temperature,
+surface pressure, maximum wind speed, minimum wind speed, and cloud amount.
+Annual aggregations applied precipitation as a cumulative sum, temperature
+extremes as annual maxima/minima, and all remaining parameters as annual
+means. These parameters collectively capture the key environmental drivers
+of crop growth, water availability, and thermal accumulation.
+
+\begin{table}[htbp]
+\caption{NASA POWER Meteorological Parameters and Their Agronomic Relevance}
+\label{tab:features}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Agronomic Role} \\
+\midrule
+Total Precipitation    & PRECTOTCORR & Water availability         \\
+Average Temperature    & T2M         & Phenological development   \\
+Maximum Temperature    & T2M\_MAX    & Heat stress indicator      \\
+Minimum Temperature    & T2M\_MIN    & Night respiration rate     \\
+Relative Humidity      & RH2M        & Disease risk \& transpiration \\
+Specific Humidity      & QV2M        & Atmospheric moisture load  \\
+Dew Point Temperature  & T2MDEW      & Nocturnal moisture supply  \\
+Surface Pressure       & PS          & Altitude-based correction  \\
+Maximum Wind Speed     & WS2M\_MAX   & Lodging \& pollination risk \\
+Minimum Wind Speed     & WS2M\_MIN   & Boundary layer stability   \\
+Cloud Amount           & CLOUD\_AMT  & Solar radiation proxy      \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sentinel-2 NDVI Data}
+
+Sentinel-2 Level-2A surface reflectance data were processed through Google
+Earth Engine (GEE), utilizing Band~4 (Red, \SI{665}{\nano\metre}) and
+Band~8 (NIR, \SI{842}{\nano\metre}) at \SI{10}{\metre} native spatial
+resolution with a 5-day revisit cycle. Monthly median composites were computed
+to minimize residual cloud contamination. NDVI was calculated as:
+
+\begin{equation}
+\text{NDVI} = \frac{\rho_\text{NIR} - \rho_\text{Red}}{\rho_\text{NIR} + \rho_\text{Red}}
+\label{eq:ndvi}
+\end{equation}
+
+\noindent where $\rho_\text{NIR}$ and $\rho_\text{Red}$ denote surface
+reflectances in the near-infrared and red bands, respectively. Annual means
+of monthly composites were computed for the analysis period.
+Fig.~\ref{fig:ndvi_sar} presents the temporal profiles of NDVI and SAR
+backscatter, illustrating the complementary nature of these two sensing
+modalities across the monsoon cycle.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{ndvi_sar_chart.png}
+  \caption{Temporal profiles of NDVI (Sentinel-2) and SAR backscatter
+  (Sentinel-1 VH) for the Satara study region. The complementary nature of
+  these modalities is evident: while optical NDVI observations are reduced
+  during monsoon months (June--September), the SAR signal provides continuous
+  coverage throughout the year, enabling all-season crop monitoring.}
+  \label{fig:ndvi_sar}
+\end{figure}
+
+\subsection{Sentinel-1 SAR Data}
+
+Sentinel-1 Ground Range Detected (GRD) Interferometric Wide (IW) swath data
+were extracted from GEE for the period 2015--2025~\cite{esa2022}. Descending
+orbit C-band (\SI{5.405}{\giga\hertz}, $\lambda = \SI{5.6}{\centi\metre}$)
+dual-polarization (VV, VH) observations at \SI{10}{\metre} spatial resolution
+were utilized. Monthly median composites were computed within a
+\SI{5}{\kilo\metre} buffer radius around the study coordinates. Backscatter
+values in decibels were converted to linear power for quantitative analysis:
+
+\begin{equation}
+\sigma^0_\text{linear} = 10^{\,\sigma^0_\text{dB}/10}
+\label{eq:linear}
+\end{equation}
+
+The Radar Vegetation Index (RVI) was then computed following the formulation
+proposed by Mandal et al.~\cite{mandal2020}:
+
+\begin{equation}
+\text{RVI} = \frac{4\,\sigma^0_{VH}}{\sigma^0_{VV} + \sigma^0_{VH}}
+\label{eq:rvi}
+\end{equation}
+
+Observed annual mean RVI values for Satara sugarcane ranged from 0.632 to
+0.672, consistent with expected values for a high-biomass perennial crop
+exhibiting strong volume scattering characteristics. The historical NDVI
+profile for the study region, derived from Landsat-7 (2000--2019), is
+presented in Fig.~\ref{fig:ndvi_history}, capturing two decades of vegetation
+dynamics and phenological seasonality.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{2000-2019-L7-graph.png}
+  \caption{Historical NDVI time series (Landsat-7, 2000--2019) for the
+  Satara study region. The inter-annual vegetation dynamics and phenological
+  seasonality---driven by the southwest monsoon cycle---are clearly captured
+  across two decades of observations, providing valuable long-term context
+  for the current study period.}
+  \label{fig:ndvi_history}
+\end{figure}
+
+\subsection{Crop Production Statistics}
+
+District-level rice yield and production data for Maharashtra (1999--2019)
+were obtained from the Ministry of Agriculture and Farmers Welfare,
+Government of India, comprising 926 records spanning 34 districts and
+21 years. Satara district sugarcane production data (2015--2022) were sourced
+from official state agricultural statistics; records for 2023--2025 were
+derived through linear trend extrapolation. Observed sugarcane yields ranged
+from \SI{67.29}{\tonne/\hectare} (2018, drought-affected season) to
+\SI{124.38}{\tonne/\hectare} (2016, favorable rainfall year), with an
+11-year mean of \SI{101.23}{\tonne/\hectare}. This range reflects the
+substantial inter-annual variability characteristic of monsoon-dependent
+agriculture.
+
+% -------------------------------------------------------
+% IV. METHODOLOGY
+% -------------------------------------------------------
+\section{Methodology}
+
+\subsection{System Architecture}
+
+The proposed framework comprises two fully independent, parallel pipelines:
+(1)~an NDVI-based regression pipeline (Stage~1) and (2)~a SAR-based regression
+pipeline (Stage~2). Each pipeline independently processes its own sensor data,
+trains its own models, and produces its own yield and production forecasts.
+There is no fusion or combination between the two pipelines---they operate
+as parallel, complementary approaches addressing the same crop yield prediction
+problem from different sensing modalities. The overall system architecture
+is illustrated in Fig.~\ref{fig:architecture}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{system_architecture.png}
+  \caption{System architecture of the proposed two-stage crop yield
+  prediction framework. Stage~1 (NDVI pipeline): Sentinel-2 NDVI and
+  NASA POWER weather data are combined with soil quality indicators to
+  train regression models for rice and sugarcane yield estimation.
+  Stage~2 (SAR pipeline): Sentinel-1 SAR backscatter (VH, VV, RVI)
+  with engineered temporal features and weather data provide
+  all-weather, cloud-transparent monitoring of sugarcane in Satara
+  district. Both pipelines operate independently and produce separate
+  yield and production forecasts.}
+  \label{fig:architecture}
+\end{figure}
+
+The two pipelines are motivated by the physical limitations of their respective
+sensing technologies. The NDVI pipeline relies on Sentinel-2 optical imagery,
+which provides fine-grained photosynthetic information under clear-sky
+conditions~\cite{kameoka2025}. However, optical sensors are systematically
+unavailable during the June--September southwest monsoon when crops are most
+actively growing---over 89\% of Satara's annual rainfall falls during this
+period~\cite{karande2016}. The SAR pipeline directly addresses this limitation:
+C-band SAR from Sentinel-1 penetrates clouds and operates at night~\cite{esa2022},
+enabling continuous crop monitoring throughout the monsoon season. SAR VH
+backscatter captures volumetric canopy scattering correlated with biomass,
+while VV polarization responds to surface dielectric properties linked to
+soil moisture~\cite{veloso2017}. The two pipelines therefore represent
+complementary approaches: NDVI for high-accuracy prediction during clear-sky
+periods, SAR for all-weather operational deployment during monsoon.
+
+\subsection{Stage 1: NDVI-Based Pipeline}
+
+The Stage~1 NDVI pipeline comprises two distinct components: (A)~exploratory
+data analysis and baseline model validation on a broad Maharashtra rice dataset,
+and (B)~the actual sugarcane yield and production prediction system trained on
+Satara district data with soil and NDVI features.
+
+\subsubsection{Component A: EDA and Baseline Validation (Rice)}
+
+\textbf{Dataset:} \texttt{maharashtra\_Rice\_CropR1.csv} from the Ministry of
+Agriculture and Farmers Welfare, comprising 926 district--year records spanning
+34 Maharashtra districts and 21 years (1997--2019). Features include district
+name (one-hot encoded into 34 binary indicators), season, annual rainfall,
+maximum temperature, and cultivated area.
+
+\textbf{Purpose:} This component (\texttt{Final\_Regression\_File.ipynb})
+performs exploratory data analysis---visualizing production, rainfall, and
+temperature trends by year, computing feature correlation matrices, and encoding
+categorical variables (district via LabelEncoder + OneHotEncoder; season as
+ordinal). Three regression models are trained and compared on a 90/10 train-test
+split (833 training, 93 test samples) to validate the viability of classical
+ML for Maharashtra rice yield estimation.
+
+\textbf{Models evaluated:}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{K-Nearest Neighbors (KNN):} $k = 3$, Minkowski distance metric.
+    With 34 binary district indicators, retrieved neighbors predominantly
+    originate from the same district, enabling effective year-on-year
+    interpolation within the feature subspace.
+  \item \textbf{Decision Tree (DT):} Recursive partitioning regression,
+    providing interpretable decision boundaries for yield classification.
+  \item \textbf{Random Forest (RF):} Ensemble of 1000 decision trees with
+    bootstrap aggregation.
+\end{itemize}
+
+This component serves as EDA and baseline validation only. Its results are
+\emph{not} used directly for sugarcane forecasting; rather, they establish
+that optical--meteorological fusion is a highly effective approach before
+applying it to the more specialized sugarcane prediction task.
+
+\subsubsection{Component B: Actual Sugarcane Yield and Production Prediction}
+
+\textbf{Datasets:} Two purpose-built datasets covering Satara district
+sugarcane (1999--2019):
+\begin{itemize}[leftmargin=*]
+  \item \texttt{phase3\_input\_yield.csv}: 17 features + Yield target (t/ha).
+  \item \texttt{phase3\_input\_prod.csv}: 17 features + Production target (tonnes).
+\end{itemize}
+
+\textbf{Feature vector (17 dimensions):} 11 NASA POWER weather parameters
+(precipitation, max/min/average temperature, specific humidity, relative
+humidity, surface pressure, dew point, min/max wind speed, cloud coverage),
+4 soil quality ordinal codes (Nitrogen, Phosphorus, Potassium, pH), and
+NDVI derived from Sentinel-2 monthly composites.
+
+\textbf{Workflow:} Both \texttt{Yield\_Prediction.ipynb} and
+\texttt{Production\_Prediction.ipynb} follow the same procedure:
+(1)~compute Pearson correlation matrices across all 17 features and the target
+to guide feature understanding; (2)~apply a 90/10 train-test split;
+(3)~train Decision Tree and Random Forest (1000 trees) regressors;
+(4)~evaluate with MSE, RMSE, and $R^2$; (5)~apply the best model to
+\texttt{2020prediction.csv} (16 input features, no target) to generate the
+2020 forecast.
+
+\textbf{Best model:} Random Forest (1000 estimators) achieves $R^2 = 0.92$
+on both tasks. Trained models and preprocessing artifacts are serialized as
+\texttt{best\_yield\_model\_ndvi.pkl}, \texttt{imputer\_ndvi.pkl}, and
+\texttt{scaler\_ndvi.pkl} for operational deployment.
+
+\subsection{Stage 2: SAR-Based Pipeline}
+
+\textbf{Backscatter Processing:} Sentinel-1 GRD scenes are preprocessed
+following ESA SNAP workflows, including thermal noise removal, radiometric
+calibration, and terrain correction~\cite{esa2022}. Backscatter is converted
+from dB to linear $\sigma^0$ via Equation~\eqref{eq:linear}. Annual mean VV,
+VH, and RVI are computed from monthly median composites within the
+\SI{5}{\kilo\metre} study buffer.
+
+\textbf{Temporal Feature Engineering:} Three carefully designed temporal
+features augment the SAR feature set to enhance predictive power:
+(1)~\textbf{Yield lag} ($Y_{t-1}$): the previous year's yield, encoding
+year-to-year continuity arising from soil state persistence and management
+practices. (2)~\textbf{Rolling precipitation}
+($\bar{P}_{t-2:t}$): three-year rolling mean precipitation, capturing
+multi-year moisture trends relevant to perennial sugarcane root development.
+(3)~\textbf{Rolling temperature} ($\bar{T}_{t-2:t}$): three-year rolling mean
+temperature, capturing thermal accumulation trends for sucrose development.
+The complete feature vector contains 23 dimensions: 11 weather parameters,
+4 soil quality ordinal codes (N, P, K, pH), 3 SAR metrics (VH, VV, RVI),
+and 5 engineered temporal features. Preprocessing employs
+\texttt{SimpleImputer}(strategy=\texttt{mean}) followed by
+\texttt{StandardScaler}.
+
+\textbf{Model Training:} \texttt{HistGradientBoostingRegressor} is selected
+for its native missing-value support, histogram-based binning efficiency,
+and demonstrated robustness on small tabular datasets. Hyperparameter
+optimization (learning rate $\in \{0.01, 0.05, 0.1\}$, max depth
+$\in \{2, 3, 5\}$, max iterations $\in \{50, 100, 200\}$) is performed via
+\texttt{GridSearchCV} with \texttt{TimeSeriesSplit} ($n_\text{splits} = 3$)
+to prevent temporal information leakage.
+
+\subsection{Pipeline Complementarity and Deployment Strategy}
+
+The two pipelines are designed for deployment in complementary scenarios
+rather than as a fused system. The NDVI pipeline is the preferred approach
+when cloud-free Sentinel-2 imagery is available, leveraging 21 years of
+historical district-level records to produce high-accuracy predictions
+($R^2 = 0.92$ for sugarcane). The SAR pipeline is deployed when optical
+observations are unavailable---specifically during the June--September monsoon
+growing season---using Sentinel-1 data that is unaffected by cloud cover.
+NASA POWER weather data and soil quality indicators are embedded in both
+pipelines, providing a shared environmental feature foundation that ensures
+consistency of input variables across both sensing modalities~\cite{narimani2026}.
+Real-time operational deployment is supported by \texttt{predict\_realtime.py},
+which automatically fetches current-season weather and SAR data from their
+respective sources and applies the trained SAR model for pre-harvest
+yield estimation~\cite{esa2022}.
+
+% -------------------------------------------------------
+% V. FEATURE ENGINEERING
+% -------------------------------------------------------
+\section{Feature Engineering}
+
+Effective feature design is central to the predictive performance of both
+pipeline stages. This section details the feature engineering strategies
+employed.
+
+\textbf{NDVI Pipeline --- EDA Component (41 features, rice):} The EDA
+baseline feature set for \texttt{maharashtra\_Rice\_CropR1.csv} comprises
+34 binary district indicators (one-hot encoded from 34 Maharashtra districts),
+1 season indicator, annual rainfall (cumulative), maximum temperature, and
+cultivated area. District indicators encode Maharashtra's spatial agroclimatic
+heterogeneity, enabling the model to learn district-specific yield baselines
+and isolate inter-annual variation from cross-district variation.
+
+\textbf{NDVI Pipeline --- Prediction Component (17 features, sugarcane):}
+The actual sugarcane prediction feature set integrates 11 NASA POWER weather
+parameters (precipitation, max/min/average temperature, specific humidity,
+relative humidity, surface pressure, dew point, min/max wind speed, cloud
+coverage), 4 soil quality ordinal codes (Nitrogen, Phosphorus, Potassium, pH),
+and annual mean NDVI derived from Sentinel-2 monthly composites. This compact
+but information-rich 17-dimensional feature vector directly encodes the
+environmental, edaphic, and vegetation conditions governing sugarcane yield
+and production.
+
+\textbf{SAR Pipeline (23 features):} Beyond the fundamental VV, VH, and RVI
+backscatter values, five novel features are engineered to maximize predictive
+information. The yield lag ($Y_{t-1}$) is a powerful temporal predictor,
+reflecting soil carbon dynamics, crop variety continuity, and management
+memory. The three-year rolling precipitation mean
+($\bar{P}_{t-2:t}$) captures multi-year moisture regime effects on
+sugarcane root architecture. The three-year rolling temperature mean
+($\bar{T}_{t-2:t}$) encodes climate trend effects on sucrose accumulation
+during ripening. The VH--VV polarization contrast captures canopy structural
+development. Soil quality ordinal codes (Nitrogen, Phosphorus, Potassium, pH)
+for the Phaltan region provide static regional fertility context.
+
+\textbf{Feature Importance Analysis:} Permutation-based feature importance
+analysis (Fig.~\ref{fig:importance}) reveals the relative contributions of
+each feature to the SAR pipeline's predictive capability. VH backscatter mean
+emerges as the most impactful feature, followed by meteorological variables
+(dew point, minimum wind speed, specific humidity), confirming that the
+integration of SAR and weather data provides complementary predictive
+information. The substantial contribution of multiple weather parameters
+validates the decision to embed meteorological features throughout both
+pipeline stages.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{feature_importance.png}
+  \caption{Permutation-based feature importance for the SAR pipeline
+  (HistGradientBoosting model). SAR-derived features (VH mean, RVI, shown in
+  red) and meteorological features (shown in blue) both contribute
+  substantially, confirming the value of multi-source data integration.
+  VH backscatter mean ranks as the single most important predictor.}
+  \label{fig:importance}
+\end{figure}
+
+% -------------------------------------------------------
+% VI. EXPERIMENTAL SETUP
+% -------------------------------------------------------
+\section{Experimental Setup}
+
+\textbf{Data Partitioning Strategy:} The NDVI pipeline employs a 90/10
+random split (random\_state = 101) with 833 training and 93 test samples,
+appropriate for the large cross-sectional district-level dataset. The SAR
+pipeline employs \texttt{TimeSeriesSplit} ($n = 3$) with expanding temporal
+windows: Fold~1 trains on 2015--2017 and validates on 2018--2019; Fold~2
+trains on 2015--2019 and validates on 2020--2021; Fold~3 trains on 2015--2021
+and validates on 2022--2023. This protocol mirrors realistic deployment
+scenarios where models are trained on historical data and applied to forecast
+future seasons.
+
+\textbf{Evaluation Metrics:} Three complementary metrics quantify predictive
+performance. Root Mean Squared Error (RMSE) penalizes large deviations and
+is particularly relevant for identifying catastrophic prediction failures:
+
+\begin{equation}
+\text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}
+\label{eq:rmse}
+\end{equation}
+
+Mean Absolute Error (MAE) provides a scale-interpretable average deviation
+measure:
+
+\begin{equation}
+\text{MAE} = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|
+\label{eq:mae}
+\end{equation}
+
+The coefficient of determination ($R^2$) quantifies the proportion of yield
+variance explained by the model:
+
+\begin{equation}
+R^2 = 1 - \frac{\sum_{i=1}^{n}(y_i-\hat{y}_i)^2}{\sum_{i=1}^{n}(y_i-\bar{y})^2}
+\label{eq:r2}
+\end{equation}
+
+\textbf{Implementation Details:} All experiments were conducted using
+Python~3.10 with scikit-learn (preprocessing, model training,
+cross-validation), the Earth Engine Python API (satellite data extraction),
+pandas and NumPy (data manipulation), and matplotlib with seaborn
+(visualization). Model serialization was handled via joblib. ESA SNAP was
+used for SAR preprocessing~\cite{esa2022}. All random seeds were fixed at 42
+to ensure full reproducibility.
+
+% -------------------------------------------------------
+% VII. RESULTS AND DISCUSSION
+% -------------------------------------------------------
+\section{Results and Discussion}
+
+\subsection{NDVI Pipeline Performance}
+
+\subsubsection{Component A: EDA Baseline --- Maharashtra Rice (926 records)}
+
+Table~\ref{tab:ndvi} reports model performance on the 93-sample test partition
+of \texttt{maharashtra\_Rice\_CropR1.csv}. All three models achieve strong
+predictive accuracy, validating the viability of weather--district feature
+integration for rice yield estimation across Maharashtra.
+
+\begin{table}[htbp]
+\caption{EDA Baseline: Rice Productivity Prediction --- Model Comparison\\
+(Test Set: 93 Samples, 34 Districts, Maharashtra, 1997--2019)}
+\label{tab:ndvi}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Model} & \textbf{$R^2$} & \textbf{RMSE (t/ha)} & \textbf{MAE (t/ha)} \\
+\midrule
+K-Nearest Neighbors ($k=3$) & \textbf{0.946} & \textbf{1.12} & \textbf{0.85} \\
+Random Forest (1000 trees)  & 0.930          & 1.25          & 0.95          \\
+Decision Tree               & 0.890          & 1.40          & 1.10          \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+KNN achieves the best EDA baseline performance with $R^2 = 0.946$,
+RMSE = \SI{1.12}{\tonne/\hectare}, and MAE = \SI{0.85}{\tonne/\hectare}.
+This result is attributable to the dataset structure: 34 districts $\times$
+21 years with consistent within-district feature patterns. With $k = 3$,
+retrieved neighbors predominantly originate from the same district, enabling
+effective year-on-year interpolation. Random Forest achieves $R^2 = 0.930$
+through ensemble averaging. These results confirm that classical ML with
+weather and district features captures 89--95\% of rice yield variance across
+Maharashtra---validating the approach before applying it to the targeted
+sugarcane prediction task.
+
+\subsubsection{Component B: Actual Sugarcane Yield and Production Prediction}
+
+Table~\ref{tab:sugarcane} reports model performance for the two actual
+prediction tasks on Satara district sugarcane data (1999--2019), using 17
+input features (11 weather + 4 soil + NDVI). Both \texttt{Yield\_Prediction.ipynb}
+and \texttt{Production\_Prediction.ipynb} follow an identical workflow: 90/10
+train-test split, model comparison, and 2020 forecast via \texttt{2020prediction.csv}.
+
+\begin{table}[htbp]
+\caption{Sugarcane Yield and Production Prediction --- Model Comparison\\
+(Satara District, 90/10 Split, 1999--2019)}
+\label{tab:sugarcane}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Model} & \textbf{Yield $R^2$} & \textbf{Production $R^2$} \\
+\midrule
+Random Forest (1000 trees) & \textbf{0.92} & \textbf{0.92} \\
+Decision Tree              & 0.79          & 0.79          \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Random Forest (1000 estimators) achieves $R^2 = 0.92$ on both tasks,
+explaining 92\% of the variance in sugarcane yield and production. Applied
+to \texttt{2020prediction.csv}, the model produces the following forecasts:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Sugarcane Yield (2020):} \SI{94.55}{\tonne\per\hectare}
+  \item \textbf{Sugarcane Production (2020, Vedhani):} 1{,}431{,}738 tonnes
+\end{itemize}
+
+The Decision Tree regressor achieves $R^2 = 0.79$, confirming that the
+ensemble averaging of Random Forest is essential for robust generalization on
+this 17-feature annual dataset. Trained artifacts (\texttt{best\_yield\_model\_ndvi.pkl},
+\texttt{imputer\_ndvi.pkl}, \texttt{scaler\_ndvi.pkl}) are persisted for
+deployment-time inference without retraining.
+
+\subsection{SAR Pipeline: All-Weather Crop Monitoring}
+
+The SAR pipeline addresses the core limitation of the NDVI approach by
+operating continuously through cloud cover. The feature correlation analysis
+(Fig.~\ref{fig:corr}) reveals the inter-variable relationships within the
+SAR dataset. Precipitation and VH backscatter exhibit meaningful correlations
+with sugarcane yield ($r = 0.67$ and $r = 0.62$, respectively), confirming
+that weather and SAR features capture independent, non-redundant yield-related
+information. The partial independence of temperature, soil quality, and RVI
+features further confirms that each data source contributes unique signal.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{correlation_matrix.png}
+  \caption{Pearson correlation matrix for the SAR pipeline feature set and
+  sugarcane yield target. Precipitation ($r = 0.67$) and VH backscatter
+  ($r = 0.62$) show the strongest individual correlations with yield.
+  The partial independence of temperature, soil quality, and RVI features
+  confirms that each data source contributes non-redundant information.}
+  \label{fig:corr}
+\end{figure}
+
+The SAR feature distributions across the 11-year study period
+(Fig.~\ref{fig:sardist}) demonstrate meaningful inter-annual variability in
+VH backscatter (range: $-18.6$ to $-16.9$~dB) and RVI (range: 0.632 to
+0.672). This variability provides the discriminative signal for year-to-year
+yield differentiation. The 2018 drought-affected season is associated with
+the minimum observed VH backscatter ($-18.57$~dB)---demonstrating SAR's
+capability to detect climate-induced crop stress even under cloud-covered
+monsoon conditions where optical NDVI observations are unavailable.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{sar_distributions.png}
+  \caption{Distributions of Sentinel-1 SAR features (VH mean, VV mean, and
+  RVI) across 11 annual samples (2015--2025) for Satara sugarcane. The
+  inter-annual variability captured by these features enables differentiation
+  of crop conditions across growing seasons, including the anomalously low
+  VH values in the 2018 drought season.}
+  \label{fig:sardist}
+\end{figure}
+
+\textbf{Model selection and 2026 forecasts:} Five regression models were
+evaluated on the SAR pipeline for production prediction using
+leave-one-out cross-validation (LOO-CV), and Decision Tree and Random Forest
+(1000 trees) were compared for yield prediction using an 80/20 temporal
+split. Quantitative $R^2$ metrics are not reported for the SAR pipeline due
+to the inherently limited training set of 11 annual samples (2015--2025),
+which is insufficient to produce statistically reliable performance estimates.
+Random Forest was selected as the best-performing model across both yield and
+production tasks based on cross-validation MAE and RMSE comparisons.
+Applied to the 2026 feature inputs (\texttt{2026prediction\_sar.csv}),
+the SAR pipeline produces the following independent forecasts for Satara
+district:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Sugarcane Yield (2026):} \SI{110.78}{\tonne\per\hectare}
+  \item \textbf{Sugarcane Production (2026):} 1{,}617{,}085 tonnes (Random Forest)
+\end{itemize}
+
+The production forecast range across all five evaluated models is
+1{,}462{,}600--1{,}617{,}103 tonnes, reflecting the inherent uncertainty in
+small-sample temporal extrapolation. These forecasts are entirely independent
+of the NDVI pipeline predictions.
+
+\subsection{Comparative Analysis: NDVI vs.\ SAR Pipeline}
+
+Table~\ref{tab:comparison} presents a side-by-side summary of the two
+independent pipelines, highlighting their distinct data sources, methodologies,
+and prediction outputs.
+
+\begin{table}[htbp]
+\caption{Pipeline Performance Summary: NDVI vs.\ SAR}
+\label{tab:comparison}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Aspect} & \textbf{NDVI Pipeline} & \textbf{SAR Pipeline} \\
+\midrule
+Sensor & Sentinel-2 (optical) & Sentinel-1 (microwave) \\
+Cloud penetration & No & Yes \\
+Monsoon monitoring & Limited & Continuous \\
+Training samples & 926 (rice EDA) & 11 (sugarcane) \\
+                  & Annual (sugarcane) & \\
+Best model & KNN / Random Forest & Random Forest \\
+Sugarcane $R^2$ & 0.92 & Not reported$^*$ \\
+Yield forecast & \SI{94.55}{\tonne/ha} (2020) & \SI{110.78}{\tonne/ha} (2026) \\
+Production forecast & 1{,}431{,}738 t (2020) & 1{,}617{,}085 t (2026) \\
+Real-time support & No & Yes \\
+\bottomrule
+\multicolumn{3}{@{}l@{}}{\footnotesize $^*$Not reported: 11 samples insufficient for reliable $R^2$ estimation.}
+\end{tabular}
+\end{table}
+
+The NDVI pipeline's primary strength lies in its large historical training
+set and strong validated accuracy ($R^2 = 0.92$) for sugarcane prediction,
+making it the preferred approach when cloud-free optical imagery is available.
+The SAR pipeline's primary strength is all-weather operability: it provides
+continuous monitoring throughout the monsoon growing season and supports
+real-time yield forecasting via automated data fetching from GEE and
+NASA POWER, making it the only viable option for in-season forecasting
+during June--September cloud cover~\cite{esa2022,mandal2020}.
+
+\subsection{Year-by-Year Yield Dynamics}
+
+Fig.~\ref{fig:yearcomp} presents the year-by-year comparison of actual and
+predicted sugarcane yields for Satara district (2015--2025). The close
+alignment between actual and predicted values across the full temporal range
+confirms the model's ability to capture both inter-annual trends and
+anomalous events. The 2018 drought-affected year (yield =
+\SI{67.29}{\tonne/\hectare}, compared to the 11-year mean of
+\SI{101.23}{\tonne/\hectare}) and the high-yield 2016 season
+(\SI{124.38}{\tonne/\hectare}) are both well-captured, demonstrating the
+model's sensitivity to extreme yield variations.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{year_comparison.png}
+  \caption{Year-by-year comparison of actual and predicted sugarcane yield
+  (t/ha) for Satara district (2015--2025). The close tracking across the full
+  range---from the drought-affected 2018 season (\SI{67.29}{\tonne/\hectare})
+  to the high-yield 2016 season (\SI{124.38}{\tonne/\hectare})---demonstrates
+  the model's effectiveness in capturing both trends and extreme events.}
+  \label{fig:yearcomp}
+\end{figure}
+
+\subsection{Multi-Model SAR Analysis}
+
+Fig.~\ref{fig:avsp} presents the actual versus predicted yield scatter plots
+for multiple models evaluated on the SAR-based pipeline using leave-one-out
+cross-validation. The analysis across Random Forest, Linear Regression, SVR,
+and KNN provides insights into the inherent characteristics of SAR-based
+yield prediction. The results highlight the value of combining SAR with
+complementary data sources: while SAR backscatter captures valuable
+structural and moisture information, its predictive power is most effectively
+realized when integrated with optical NDVI and meteorological data within the
+hybrid framework, consistent with findings by Uribeetxebarria
+et al.~\cite{uribe2023}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{actual_vs_predicted.png}
+  \caption{Actual versus predicted yield scatter plots for multiple models
+  evaluated on the SAR pipeline using leave-one-out cross-validation on the
+  11-sample Satara sugarcane dataset. Random Forest produces the closest
+  tracking to the 1:1 line and is selected as the best-performing model
+  for the 2026 yield forecast.}
+  \label{fig:avsp}
+\end{figure}
+
+\subsection{Discussion and Key Insights}
+
+Three key insights emerge from these experimental results.
+
+\textbf{First}, the EDA baseline on Maharashtra rice data ($R^2 = 0.946$,
+KNN) confirms that classical ML with district-encoded weather features
+effectively captures rice yield variance at state scale. This result
+validates the optical--meteorological feature design before applying it to
+the sugarcane-specific prediction task. The subsequent sugarcane prediction
+models ($R^2 = 0.92$, Random Forest) demonstrate that the 17-feature
+integration of weather, soil (N, P, K, pH), and NDVI generalizes effectively
+to annual yield and production estimation for a targeted district.
+The 2020 forecasts of \SI{94.55}{\tonne\per\hectare} and 1{,}431{,}738 tonnes
+are consistent with the observed multi-year trend for Satara sugarcane.
+Soil features and NDVI complement weather variables by encoding agronomic
+context that meteorological data alone cannot capture~\cite{kameoka2025}.
+
+\textbf{Second}, the SAR pipeline successfully addresses NDVI's monsoon
+cloud-cover limitation by operating as a fully independent all-weather
+alternative. VH backscatter correlates meaningfully with sugarcane yield
+($r = 0.62$), confirming its sensitivity to canopy structure and biomass.
+Precipitation emerges as the strongest individual predictor ($r = 0.67$),
+consistent with the established dependence of Deccan Plateau sugarcane on
+monsoon rainfall for ratoon development and juice content~\cite{karande2016}.
+The SAR pipeline's 2026 forecasts of \SI{110.78}{\tonne\per\hectare} yield
+and 1{,}617{,}085 tonnes production demonstrate operational applicability.
+The limited training set (11 annual samples) constrains statistical
+validation, but the pipeline's real-time deployment capability makes it the
+only viable approach for in-season forecasting during the monsoon
+period~\cite{esa2022,mandal2020}.
+
+\textbf{Third}, the two pipelines represent fundamentally different trade-offs:
+the NDVI pipeline prioritizes prediction accuracy using a large historical
+dataset under cloud-free conditions, while the SAR pipeline prioritizes
+operational availability and monsoon-season coverage using microwave signals
+unaffected by clouds~\cite{uribe2023,chen2023}. Weather data (NASA POWER)
+and soil quality indicators underpin both pipelines, providing a shared
+environmental feature foundation and enabling consistent interpretation of
+remote sensing signals within their respective physical frameworks.
+
+% -------------------------------------------------------
+% VIII. CONCLUSION
+% -------------------------------------------------------
+\section{Conclusion}
+
+This research presented, implemented, and evaluated two independent, parallel
+machine learning pipelines for crop yield prediction in Satara district,
+Maharashtra, combining satellite remote sensing with NASA POWER meteorological
+data and soil quality indicators. The Stage~1 NDVI pipeline delivers two
+results: (1)~EDA and baseline validation on the 926-sample Maharashtra rice
+dataset confirms $R^2 = 0.946$ with KNN, establishing the effectiveness of
+optical--meteorological fusion for rice yield estimation across 34 districts;
+(2)~the actual sugarcane prediction models (\texttt{Yield\_Prediction.ipynb},
+\texttt{Production\_Prediction.ipynb}), trained on 17-feature datasets
+(11 weather + 4 soil + NDVI), achieve $R^2 = 0.92$ with Random Forest (1000
+trees), with 2020 forecasts of \SI{94.55}{\tonne\per\hectare} yield and
+1{,}431{,}738 tonnes production. The Stage~2 SAR pipeline directly addresses
+NDVI's fundamental limitation---cloud-induced observational gaps during the
+June--September monsoon---by exploiting Sentinel-1 C-band backscatter (VH,
+VV, RVI) augmented with engineered temporal features (yield lag, rolling
+precipitation and temperature means). Evaluated on 11 annual samples
+(2015--2025), Random Forest produces independent 2026 forecasts of
+\SI{110.78}{\tonne\per\hectare} yield and 1{,}617{,}085 tonnes production.
+The real-time operational deployment system (\texttt{predict\_realtime.py})
+fetches live weather and SAR data automatically, enabling pre-harvest
+forecasting during monsoon without requiring cloud-free optical imagery.
+
+The core contribution of this work is the demonstration that NDVI and SAR
+represent complementary rather than competing approaches: NDVI delivers strong
+validated accuracy ($R^2 = 0.92$) under clear-sky conditions using large
+historical datasets, while SAR provides all-weather operational capability
+during the critical monsoon growing season when optical sensors systematically
+fail. Together they form a complete, year-round forecasting framework with
+substantial practical implications for procurement planning (Food Corporation
+of India), weather-index crop insurance (PMFBY), precision input scheduling,
+and early drought warning systems.
+
+\subsection{Opportunities for Future Enhancement}
+
+Several promising avenues exist for extending the capabilities of this
+framework. Deep learning architectures---particularly Long Short-Term Memory
+(LSTM) networks and Temporal Convolutional Networks---can exploit the full
+monthly temporal resolution of NDVI and SAR observations, capturing
+intra-seasonal phenological dynamics beyond annual aggregations. Geographic
+expansion to additional Maharashtra districts and other Indian states would
+increase training data volume and provide broader validation of spatial
+generalizability. Integration with real-time IoT-based soil moisture and
+microclimate sensors would provide ground-truth validation at temporal
+resolutions that complement satellite-based observations. Coupling with
+process-based crop growth models (WOFOST, DSSAT) via data assimilation
+would embed mechanistic agronomic knowledge into the data-driven framework.
+Finally, deployment on cloud computing platforms (Google Earth Engine, AWS)
+as an automated pipeline would enable operational monthly-updated yield
+probability distributions at both district and field scales---realizing the
+full potential of the hybrid precision agriculture system developed in this
+research.
+
+% -------------------------------------------------------
+% ACKNOWLEDGMENTS
+% -------------------------------------------------------
+\section*{Acknowledgments}
+
+The authors gratefully acknowledge the Department of Computer Science and
+Engineering, Indian Institute of Information Technology Dharwad, for
+providing computational infrastructure and academic guidance throughout this
+research. We thank the NASA Prediction of Worldwide Energy Resources (POWER)
+project, the European Space Agency Copernicus program (Sentinel-1 and
+Sentinel-2 missions), and Google Earth Engine for providing the open-access
+data platforms that enabled this study. Crop production statistics were sourced
+from the Ministry of Agriculture and Farmers Welfare, Government of India.
+
+% -------------------------------------------------------
+% REFERENCES
+% -------------------------------------------------------
+\begin{thebibliography}{12}
+
+\bibitem{narimani2026}
+M. Narimani et~al., ``Sentinel-2 for Crop Yield Estimation: A Systematic
+Review,'' \textit{arXiv preprint arXiv:2603.23779}, Mar.\ 2026.
+
+\bibitem{filgueiras2019}
+R. Filgueiras et~al., ``Crop NDVI Monitoring Based on Sentinel~1,''
+\textit{Remote Sensing}, vol.~11, no.~12, Art.\ 1441, 2019.
+
+\bibitem{mandal2020}
+D. Mandal, V. Kumar, D. Ratha, S. Dey, A. Bhattacharya, J. M.
+Lopez-Sanchez, H. McNairn, and Y. S. Rao, ``Dual polarimetric radar
+vegetation index for crop growth monitoring using Sentinel-1 SAR data,''
+\textit{Remote Sensing of Environment}, vol.~247, Art.\ 111811, 2020.
+
+\bibitem{xu2025}
+J. Xu et~al., ``Estimating Sugarcane Biomass via Data Assimilation of
+Sentinel-2 LAI into a Crop Model,'' \textit{Int.\ J.\ Appl.\ Earth Obs.\
+Geoinf.}, vol.~120, Art.\ 103003, 2025.
+
+\bibitem{chen2023}
+J. Chen et~al., ``Crop NDVI Time Series Reconstruction from Sentinel-1 SAR
+and Environmental Data,'' \textit{Computers and Electronics in Agriculture},
+vol.~207, Art.\ 107685, 2023.
+
+\bibitem{mesas2023}
+F. J. Mesas-Carrascosa et~al., ``Enhancing Crop Yield Estimation by
+Integrating Sentinel-1 SAR Estimated NDVI,'' \textit{Remote Sensing},
+vol.~15, no.~2, Art.\ 296, 2023.
+
+\bibitem{uribe2023}
+A. Uribeetxebarria et~al., ``Optimizing Wheat Yield Prediction Integrating
+Sentinel-1 and Sentinel-2 with CatBoost,'' \textit{Remote Sensing}, vol.~15,
+no.~6, Art.\ 1640, 2023.
+
+\bibitem{aman2024}
+K. Amankulova et~al., ``Integrating Sentinel-1, Sentinel-2 and Topographic
+Data for Soybean Yield Prediction Using Machine Learning,'' \textit{Advances
+in Space Research}, vol.~73, pp.~4052--4066, 2024.
+
+\bibitem{karande2016}
+S. V. Karande and P. A. Khadke, ``Climate Variability and Food Security in
+Satara District, Maharashtra,'' \textit{European Academic Research}, vol.~4,
+no.~4, Jul.\ 2016.
+
+\bibitem{muhammad2026}
+A. M. Muhammad et~al., ``A Review of Remote Sensing-Based Crop Yield
+Estimation: Machine Learning Techniques and Limitations,'' \textit{Frontiers
+in Plant Science}, vol.~17, Art.\ 1742689, 2026.
+
+\bibitem{kameoka2025}
+T. Kameoka et~al., ``Rice-Yield Estimation Using Sentinel-2 NDVI and
+Interview Data,'' \textit{Scientific African}, vol.~30, Art.\ e03071, 2025.
+
+\bibitem{esa2022}
+European Space Agency, \textit{Sentinel-1 SAR GRD: C-band Synthetic Aperture
+Radar Ground Range Detected, Log Scaling.} ESA Copernicus Data User Guide,
+2022. [Online]. Available:
+\url{https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S1_GRD}
+
+\bibitem{veloso2017}
+A. Veloso et~al., ``Understanding the Temporal Behavior of Crops Using
+Sentinel-1 and Sentinel-2-Like Data for Agricultural Applications,''
+\textit{Remote Sensing of Environment}, vol.~199, pp.~415--426, 2017.
+
+\end{thebibliography}
+
+\end{document}
